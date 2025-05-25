@@ -1,29 +1,16 @@
 import React, { useState, useRef } from "react";
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
 import { Box, Button, Slider, Typography, LinearProgress } from "@mui/material";
 import ReactPlayer from 'react-player';
 
 export default function VideoEditor() {
-  const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [duration, setDuration] = useState(0);
   const [trimRange, setTrimRange] = useState([0, 0]);
   const [outputUrl, setOutputUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
+  const [mergedVideoBlob, setMergedVideoBlob] = useState(null);
 
-  const ffmpegRef = useRef(null);
   const playerRef = useRef(null);
-
-  // 初始化ffmpeg
-  const loadFFmpeg = async () => {
-    if (!ffmpegRef.current) {
-      ffmpegRef.current = new FFmpeg();
-      await ffmpegRef.current.load();
-      setFfmpegLoaded(true);
-    }
-  };
 
   // 处理文件上传
   const handleFileChange = async (e) => {
@@ -49,10 +36,52 @@ export default function VideoEditor() {
     // 返回的是视频 blob
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
+    setMergedVideoBlob(blob);
     setOutputUrl(url);
     setVideoUrl(url); // 预览合并后的视频
     setLoading(false);
   };
+
+  const handleTrim = async () => {
+    if (!mergedVideoBlob) {
+      alert("请先选择视频文件");
+      return;
+    }
+    if (trimRange[0] >= trimRange[1]) {
+      alert("结束时间需大于开始时间");
+      return;
+    }
+  
+    const formData = new FormData();
+    const file = new File([mergedVideoBlob], 'merged.mp4', { type: mergedVideoBlob.type || 'video/mp4' });
+    formData.append('video', file);
+    formData.append('start', trimRange[0]); // 起始时间（单位：秒，字符串类型）
+    formData.append('end', trimRange[1]);     // 结束时间（单位：秒，字符串类型）
+  
+    setLoading(true);
+    const res = await fetch('http://localhost:3001/videos/trim', {
+      method: 'POST',
+      body: formData,
+    });
+  
+    if (!res.ok) {
+      setLoading(false);
+      alert('裁剪失败');
+      return;
+    }
+  
+    // 返回裁剪后的视频
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    setOutputUrl(url);
+    setLoading(false);
+  };
+  
+
+  const handleDuration = (duration) => {
+    setDuration(duration);
+  };
+  
   
 
   return (
@@ -109,10 +138,10 @@ export default function VideoEditor() {
           <Button
             variant="contained"
             onClick={handleTrim}
-            disabled={loading || trimRange[1] - trimRange[0] <= 0 || !ffmpegLoaded}
-          >
+            disabled={loading || trimRange[1] - trimRange[0] <= 0}
+            >
             剪辑并导出
-          </Button>
+            </Button>
         </Box>
       )}
 
